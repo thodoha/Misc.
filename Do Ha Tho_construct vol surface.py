@@ -2,7 +2,7 @@
 """
 Created on Thu Dec 28 16:36:45 2017
 
-@author: AHA-Guest2
+@author: Tho Do
 """
 
 import ib_insync
