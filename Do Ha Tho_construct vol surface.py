@@ -177,105 +177,105 @@ def construct_options_matrix(contracts_df,strikes):
 # COLLECTING OPTION CHAIN DATA AND CONSTRUCT VOL SURFACE
 # connecting to IB API
 
+if __name__ == "__main__":
+    conn_str = (r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
+                r'DBQ=...\VolSurface.accdb;')
 
-conn_str = (r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
-            r'DBQ=...\VolSurface.accdb;')
-    
-# create aconnection ADB, more on this can be found on pyodbc documentation
-cnxn = pyodbc.connect(conn_str)
-crsr = cnxn.cursor()
+    # create aconnection ADB, more on this can be found on pyodbc documentation
+    cnxn = pyodbc.connect(conn_str)
+    crsr = cnxn.cursor()
 
-# name of the database
-underlying_db = 'DUMMY'
+    # name of the database
+    underlying_db = 'DUMMY'
 
-# SQL query to pull IB contract ID from the database
-crsr.execute("""SELECT tblSecurity.IBContractID
-             FROM tblSecurity
-             WHERE (((tblSecurity.MandateID)=?));
-             """,underlying_db)
-underlying_id = crsr.fetchone().IBContractID
+    # SQL query to pull IB contract ID from the database
+    crsr.execute("""SELECT tblSecurity.IBContractID
+                 FROM tblSecurity
+                 WHERE (((tblSecurity.MandateID)=?));
+                 """,underlying_db)
+    underlying_id = crsr.fetchone().IBContractID
 
-# connect to IB API
-ib = ib_insync.ib.IB()
-ib.connect('127.0.0.1', 7496, clientId=13)
+    # connect to IB API
+    ib = ib_insync.ib.IB()
+    ib.connect('127.0.0.1', 7496, clientId=13)
 
-# switch to frozen data if there is no live data
-ib.reqMarketDataType(2)
-
-
-underlying = req_underlying(ib,underlying_id)
-
-# request historical price of previous day from IB
-
-underlying_close = req_underlying_price(ib,underlying) 
+    # switch to frozen data if there is no live data
+    ib.reqMarketDataType(2)
 
 
-# request option chain
-# exchange of the option
-option_exchange = 'GLOBEX'
-chains = req_opt_chain(ib, underlying, option_exchange)
+    underlying = req_underlying(ib,underlying_id)
 
-## extract strikes and expirations
-strikes, expirations = req_strikes_and_expirations(ib, chains, underlying_close)
+    # request historical price of previous day from IB
 
-# request option data
-contracts_df = req_options(ib, underlying, underlying_close, strikes, expirations,option_exchange)
+    underlying_close = req_underlying_price(ib,underlying) 
 
-# disconnect to the IB API
-ib.disconnect()
 
-# create an option matrix with rows as strikes and columns as expirations
-contracts_matrix = construct_options_matrix(contracts_df,strikes)
+    # request option chain
+    # exchange of the option
+    option_exchange = 'GLOBEX'
+    chains = req_opt_chain(ib, underlying, option_exchange)
 
-matrix_strikes = sorted(contracts_matrix.index.tolist())
-matrix_expirations = sorted(contracts_matrix.columns.tolist())
+    ## extract strikes and expirations
+    strikes, expirations = req_strikes_and_expirations(ib, chains, underlying_close)
 
-#### =============================================================================================
-#### EXPORT TO DATABASE
-print("update to database")
+    # request option data
+    contracts_df = req_options(ib, underlying, underlying_close, strikes, expirations,option_exchange)
 
-# remove existing data in the database
-crsr.execute("""DELETE FROM tblStrikes WHERE (((tblStrikes.MandateID) = ?));
-             """, underlying_db)
-crsr.commit()
+    # disconnect to the IB API
+    ib.disconnect()
 
-crsr.execute("""DELETE FROM tblExpirations WHERE (((tblExpirations.MandateID) = ?))
-             """, underlying_db)
+    # create an option matrix with rows as strikes and columns as expirations
+    contracts_matrix = construct_options_matrix(contracts_df,strikes)
 
-crsr.commit()
+    matrix_strikes = sorted(contracts_matrix.index.tolist())
+    matrix_expirations = sorted(contracts_matrix.columns.tolist())
 
-crsr.execute("""DELETE FROM tblImpliedVols WHERE (((tblImpliedVols.MandateID) = ?))
-             """, underlying_db)
+    #### =============================================================================================
+    #### EXPORT TO DATABASE
+    print("update to database")
 
-time = dt.datetime.now()
-
-# update tblStrikes in the database
-for strike in matrix_strikes:
-    crsr.execute("""INSERT INTO tblStrikes (MandateID, Strike, UpdateTime)
-                        VALUES (?,?,?)
-                     """, underlying_db, strike, time)
+    # remove existing data in the database
+    crsr.execute("""DELETE FROM tblStrikes WHERE (((tblStrikes.MandateID) = ?));
+                 """, underlying_db)
     crsr.commit()
 
-# update expirations and implied vol in the database
-for e in matrix_expirations:
-    if e <= ib_insync.util.parseIBDatetime(underlying.lastTradeDateOrContractMonth):
-        crsr.execute("""INSERT INTO tblExpirations (MandateID, SecurityID, Expiration, UpdateTime)
-                    VALUES (?,?,?,?)
-                    """, underlying_db, underlying.localSymbol, e, time)
+    crsr.execute("""DELETE FROM tblExpirations WHERE (((tblExpirations.MandateID) = ?))
+                 """, underlying_db)
+
+    crsr.commit()
+
+    crsr.execute("""DELETE FROM tblImpliedVols WHERE (((tblImpliedVols.MandateID) = ?))
+                 """, underlying_db)
+
+    time = dt.datetime.now()
+
+    # update tblStrikes in the database
+    for strike in matrix_strikes:
+        crsr.execute("""INSERT INTO tblStrikes (MandateID, Strike, UpdateTime)
+                            VALUES (?,?,?)
+                         """, underlying_db, strike, time)
         crsr.commit()
-        for strike in matrix_strikes:
-            crsr.execute("""INSERT INTO tblImpliedVols (MandateID, SecurityID, Strike, Expiration, ImpliedVol, UpdateTime)
-                            VALUES (?,?,?,?,?,?)
-                         """, underlying_db, underlying.localSymbol ,strike, e, contracts_matrix.loc[strike,e],time)
+
+    # update expirations and implied vol in the database
+    for e in matrix_expirations:
+        if e <= ib_insync.util.parseIBDatetime(underlying.lastTradeDateOrContractMonth):
+            crsr.execute("""INSERT INTO tblExpirations (MandateID, SecurityID, Expiration, UpdateTime)
+                        VALUES (?,?,?,?)
+                        """, underlying_db, underlying.localSymbol, e, time)
             crsr.commit()
-    else:
-        crsr.execute("""INSERT INTO tblExpirations (MandateID, SecurityID, Expiration, UpdateTime)
-                    VALUES (?,?,?,?)
-                    """, underlying_db, underlying_2.localSymbol, e, time)
-        crsr.commit()
-    
-        for strike in matrix_strikes:
-            crsr.execute("""INSERT INTO tblImpliedVols (MandateID, SecurityID, Strike, Expiration, ImpliedVol, UpdateTime)
-                            VALUES (?,?,?,?,?,?)
-                         """, underlying_db, underlying_2.localSymbol, strike, e, contracts_matrix.loc[strike,e],time)
+            for strike in matrix_strikes:
+                crsr.execute("""INSERT INTO tblImpliedVols (MandateID, SecurityID, Strike, Expiration, ImpliedVol, UpdateTime)
+                                VALUES (?,?,?,?,?,?)
+                             """, underlying_db, underlying.localSymbol ,strike, e, contracts_matrix.loc[strike,e],time)
+                crsr.commit()
+        else:
+            crsr.execute("""INSERT INTO tblExpirations (MandateID, SecurityID, Expiration, UpdateTime)
+                        VALUES (?,?,?,?)
+                        """, underlying_db, underlying_2.localSymbol, e, time)
             crsr.commit()
+
+            for strike in matrix_strikes:
+                crsr.execute("""INSERT INTO tblImpliedVols (MandateID, SecurityID, Strike, Expiration, ImpliedVol, UpdateTime)
+                                VALUES (?,?,?,?,?,?)
+                             """, underlying_db, underlying_2.localSymbol, strike, e, contracts_matrix.loc[strike,e],time)
+                crsr.commit()
