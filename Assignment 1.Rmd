@@ -1,0 +1,200 @@
+---
+title: "ECON233 Assignment 1"
+author: "Tho Do"
+date: "February 6, 2019"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r echo=FALSE, message=FALSE}
+# This note uses the following libraries
+library(tidyverse)
+library(forecast)
+library(ggfortify)
+library(gridExtra)
+library(grid)
+library(dynlm)
+library(ggfortify)
+library(gridExtra)
+
+## Rather than repeat the residual diagnostic plots,
+## we write it as a function instead
+resid_diag <- function(ehat){
+  p1 <- autoplot(ehat) + geom_hline(yintercept=0) +
+    ts_thm + theme(aspect.ratio = 1/2) +
+    aes(size=plot_group) +
+    scale_size_manual(labels = "Residuals", values = 1, name = "series") +
+    theme(legend.position = "bottom")
+  ci = qnorm(0.975)/sqrt(length(ehat[!is.na(ehat)]))
+  p2 <- ggAcf(ehat) +
+    scale_y_continuous(limits=c(-1,1)) +
+    labs(title="Sample ACF of residuals") + ylab("") +
+    geom_hline(yintercept = c(ci, -ci), color = "black", linetype = "dashed") +
+    theme(panel.background = element_blank(), aspect.ratio=1/2)
+  p3 <- grid.arrange(p1, p2, nrow=1)
+}
+```
+
+
+```{r echo=FALSE, message=FALSE}
+# Theme settings for figures:
+ts_thm <- theme(
+  text = element_text(size = 14),
+  axis.title = element_text(size = 11),
+  axis.line = element_line(linetype = 'solid'),
+  panel.background = element_blank()
+)
+
+seas_thm <- theme(aspect.ratio = 1/2,
+                  axis.title.x = element_blank(),
+                  panel.background = element_blank(),
+                  axis.text.x = element_text(angle=90, vjust=0.3),
+                  axis.title = element_blank(),
+                  title = element_text(size=10))
+
+# Set directory for the file
+path <- setwd("C:/Users/win10/Downloads")
+
+# Read the file in
+df_mth <- read_csv(paste(path, "/", "timeseries_monthly.csv", sep = ""))
+```
+
+## Question 7
+### 7a
+
+Convert IP_SG (Singapore Imports) into a ts object.
+
+```{r message = FALSE}
+ip_sg.ts <- ts(df_mth$IP_SG,  start = c(1983, 1),  end = c(2017, 12),  frequency = 12)
+head(ip_sg.ts)
+```
+
+Plot IP_SG and log(IP_SG).
+
+```{r message=FALSE}
+p1 <-  autoplot(ip_sg.ts) + xlab("Singapore's Imports") + ts_thm + theme(aspect.ratio = 2/3)
+
+p2 <-  autoplot(log(ip_sg.ts)) + xlab("log(Singapore's Imports)") + ts_thm + theme(aspect.ratio = 2/3)
+
+grid.arrange(p1, p2, ncol = 2)
+```
+
+Plot the sample ACF of log(IP_SG.ts) up to 36 lags
+
+
+```{r message=FALSE}
+
+ci = qnorm(0.975) / sqrt(length(ip_sg.ts))
+
+p3 <- ggAcf(ip_sg.ts, lag.max = 36) + scale_y_continuous(limits = c(-1, 1)) +
+      labs(title = "Sample ACF of log(IP_SG)") + ylab("") +
+      geom_hline(yintercept = c(ci, -ci), color = "black",linetype = "dashed") +
+      theme(panel.background = element_blank(), aspect.ratio = 1 / 3)
+p3
+```
+
+We observe a very strong autocorrelation between residual terms. This is due to a deterministic trend component from this series (Singapore's import). As time goes by, Singapore becomes richer and hence imports more.
+
+### 7b
+
+Plot the first difference of the log IP_SG
+
+```{r message=FALSE}
+ip_sg_dt.ts <- diff(log(ip_sg.ts))
+
+p4 <- autoplot(ip_sg_dt.ts) + xlab("First difference of log(Singapore's Imports)") + ts_thm + theme(aspect.ratio = 2/3)
+
+p5 <-  ggAcf(ip_sg_dt.ts, lag.max = 36) + scale_y_continuous(limits = c(-1, 1)) +
+  labs(title = "Sample ACF of first differecnce log(IP SG)") + ylab("") +
+  geom_hline(yintercept = c(ci, -ci), color = "black",linetype = "dashed") +
+  theme(panel.background = element_blank(), aspect.ratio = 1 / 3)
+
+grid.arrange(p4, p5, ncol = 2)
+
+```
+
+After removing the trend component, we can observe that the autocorrelation between residual terms have dropped signfifcantly. However, we can still observe periodic spikes in autocorrelation, which we suspect due to seasonality.
+
+For instance,we can see a moderately strong intertemporal correlation in December imports between years. We cannot observe the same conclusion clearly from the initial series solely because the trend component has bumped up the autocorrelation  across all residuals terms, which masks the effect of seasonality. 
+
+
+### 7c
+
+Fit a dummy seasonal model on diff(log(IP_SG))
+
+```{r message=FALSE}
+Y <- ip_sg_dt.ts
+model <- dynlm(Y~season(Y)) # automatically generated seasons
+print(summary(model))
+```
+
+The dummy model captures the diff(log(IP_SG)) moderately well. We can see a statistically significant coefficient of December coefficient at 99.9%, which aligns with our own observation from ACF plot. It also captures the strong seasonality in January, March and September. Seasonality effect from May to August and October are not as strong from the ACF plot, yet the model assigns a statistically significant coefficients for these months. It underweights the effect of November, which is quite evident from ACF plot.
+
+
+## Question 8
+### 8a
+
+Visualize the data
+
+```{r message=FALSE}
+tour_arr.ts <- ts(df_mth$TOUR_SG, start=c(1983,1), end=c(2017,12), frequency=12)
+p8 <- autoplot(tour_arr.ts) + xlab("SG Tourist Arr.") +ts_thm + theme(aspect.ratio = 2/3)
+p9 <- autoplot(log(tour_arr.ts)) + xlab("log SG Tourist Arr.") +ts_thm + theme(aspect.ratio = 2/3)
+grid.arrange(p8, p9, ncol=2)
+```
+
+Take the first difference of log(SG Tourist Arr.)
+
+```{r message=FALSE}
+tour_arr_dt.ts <- diff(log(tour_arr.ts))
+
+p10 <- autoplot(tour_arr_dt.ts) + xlab("First difference of log SG Tourist Arr.") +ts_thm + theme(aspect.ratio = 2/3)
+p11 <-  ggAcf(tour_arr_dt.ts, lag.max = 36) + scale_y_continuous(limits = c(-1, 1)) +
+  labs(title = "Sample ACF of first differecnce log(SG Tourist Arr.)") + ylab("") +
+  geom_hline(yintercept = c(ci, -ci), color = "black",linetype = "dashed") +
+  theme(panel.background = element_blank(), aspect.ratio = 1 / 3)
+grid.arrange(p10, p11, ncol=2)
+```
+
+Set up the seasonal dummy model with dummy variable for outliers
+
+```{r message = FALSE}
+# create dummy variable for outliers
+Y <- as.vector(tour_arr_dt.ts)
+
+# forecast::tsoutliers can detect position of outliers
+# assign 1 to outliers, 0 to normal observations
+dummy <- rep(0, times = length(Y))
+dummy[tsoutliers(tour_arr_dt.ts)$index] <- 1
+
+# reconstruct ts object
+tour_arr_dt_dummy.ts <- ts(data.frame(Y, dummy), start=c(1983,1), end=c(2017,12), frequency=12)
+
+# create dummy seasonal model with dummy variable for outliers
+model2 <- dynlm(Y~season(Y) + dummy, data = tour_arr_dt_dummy.ts)
+print(summary(model2))
+tour_arr_resid.ts <- residuals(model2)
+resid_diag(tour_arr_resid.ts)
+```
+
+The model does not successfully capture all seasonality in this series. From the ACF plot of residuals, we can still see some medium intertemporal effect at lag 2 and 3. This signals that there are some seasonality in the residuals.
+
+The residuals do not follow AR(1) process since there is not a gradually decreasing trend in autocorrelation as number of lag increases, which is a feature of AR(1) 
+
+### 8b
+Fit the new model: dummy seasonality + lag + dummy variable for outliers
+
+```{r message = FALSE}
+model3 <- dynlm(Y~season(Y) + L(Y) + dummy, data = tour_arr_dt_dummy.ts)
+print(summary(model3))
+tour_arr_resid2.ts <- residuals(model3)
+resid_diag(tour_arr_resid2.ts)
+```
+
+Even with the new model, the same conclusion from 8a remains the same. There still are seasonalties in residuals, hence the model does not capture all seasonality effect.
